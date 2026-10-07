@@ -26,7 +26,7 @@ from tqdm import tqdm
 
 from config import Config
 from dataset import get_dataloader, load_vocab
-from train import build_model
+from train import build_model_from_ckpt
 from utils import set_seed, AverageMeter
 
 
@@ -38,14 +38,14 @@ class StudentDeepSC(nn.Module):
 
     def __init__(self, vocab_size, d_model=64, n_heads=4, d_ff=256,
                  n_enc_layers=2, n_dec_layers=2, channel_dim=16,
-                 max_len=32, dropout=0.1, pad_idx=0):
+                 max_len=32, dropout=0.1, pad_idx=0, **flags):
         super().__init__()
         from models.transceiver import ImprovedDeepSC
         self.inner = ImprovedDeepSC(
             vocab_size=vocab_size, d_model=d_model, n_heads=n_heads,
             d_ff=d_ff, n_enc_layers=n_enc_layers, n_dec_layers=n_dec_layers,
             channel_dim=channel_dim, max_len=max_len, dropout=dropout,
-            pad_idx=pad_idx)
+            pad_idx=pad_idx, **flags)
 
     @property
     def embedding(self):
@@ -114,22 +114,26 @@ def main():
     vocab_size = len(word2idx)
 
     # ---- Teacher ----
-    teacher = build_model("improved", vocab_size, device)
     ckpt = torch.load(args.teacher, map_location=device, weights_only=False)
-    teacher.load_state_dict(ckpt["model"])
+    teacher = build_model_from_ckpt(ckpt, vocab_size, device)
     teacher.eval()
     for p_t in teacher.parameters():
         p_t.requires_grad = False
     print(f"Teacher params: {count_params(teacher):,}")
 
     # ---- Student (half-size) ----
-    student = StudentDeepSC(vocab_size).inner.to(device)
+    t_args = ckpt.get("args", {})
+    student = StudentDeepSC(
+        vocab_size,
+        use_film=not t_args.get("no_film", False),
+        masked_power=not t_args.get("no_masked_power", False),
+        csi_snr=not t_args.get("no_csi_snr", False)).inner.to(device)
     print(f"Student params: {count_params(student):,}")
     print(f"Compression:    {count_params(teacher)/count_params(student):.1f}x")
 
     # ---- Data ----
     train_loader = get_dataloader("train", Config.batch_size)
-    val_loader = get_dataloader("test", Config.batch_size, shuffle=False)
+    val_loader = get_dataloader("val", Config.batch_size, shuffle=False)
 
     optimizer = torch.optim.AdamW(student.parameters(), lr=5e-4)
 

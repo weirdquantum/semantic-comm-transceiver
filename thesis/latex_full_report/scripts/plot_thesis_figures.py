@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[3]  # FinalProject (…/thesis/latex_full_report/scripts)
-CKPT = ROOT / "checkpoints"
+CKPT = ROOT / "checkpoints_v1"  # results of the first (v1) experiments
 OUT = Path(__file__).resolve().parents[1] / "figures"
 
 SNR_ORDER = [-10, -5, 0, 5, 10, 15, 20]

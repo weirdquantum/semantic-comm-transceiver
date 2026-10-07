@@ -111,7 +111,7 @@ class SNRAdaptiveMultiHeadAttention(nn.Module):
 
         scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.d_k)
         if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e9)
+            scores = scores.masked_fill(mask == 0, torch.finfo(scores.dtype).min)
         attn = self.attn_drop(F.softmax(scores, dim=-1))
         ctx = torch.matmul(attn, V)
 
@@ -142,7 +142,7 @@ class MultiHeadAttention(nn.Module):
         V = self.W_v(v).view(B, -1, self.n_heads, self.d_k).transpose(1, 2)
         scores = torch.matmul(Q, K.transpose(-2, -1)) / math.sqrt(self.d_k)
         if mask is not None:
-            scores = scores.masked_fill(mask == 0, -1e9)
+            scores = scores.masked_fill(mask == 0, torch.finfo(scores.dtype).min)
         attn = self.attn_drop(F.softmax(scores, dim=-1))
         ctx = torch.matmul(attn, V).transpose(1, 2).contiguous().view(B, -1, self.d_model)
         return self.W_o(ctx)
@@ -269,36 +269,84 @@ class SNRAdaptiveDecoderLayer(nn.Module):
 
 
 # ====================================================================
+# FiLM  –  SNR-conditioned feature-wise affine modulation
+# ====================================================================
+class FiLM(nn.Module):
+    """h -> h * (1 + gamma(c)) + beta(c).
+
+    Zero-initialised so that at the start of training the layer is the
+    identity and the model behaves exactly like its un-conditioned version.
+    """
+
+    def __init__(self, cond_dim: int, feat_dim: int):
+        super().__init__()
+        self.proj = nn.Linear(cond_dim, 2 * feat_dim)
+        nn.init.zeros_(self.proj.weight)
+        nn.init.zeros_(self.proj.bias)
+
+    def forward(self, h, cond):
+        """h: (B, L, F),  cond: (B, cond_dim)."""
+        gamma, beta = self.proj(cond).unsqueeze(1).chunk(2, dim=-1)
+        return h * (1 + gamma) + beta
+
+
+# ====================================================================
 # Channel encoder / decoder  (dense projection + power normalisation)
 # ====================================================================
 class ChannelEncoder(nn.Module):
-    """Maps d_model → channel_dim per time-step, then power-normalises."""
+    """Maps d_model → channel_dim per time-step, then power-normalises.
 
-    def __init__(self, d_model: int, channel_dim: int):
+    Args:
+        film_dim:      if set, the hidden layer is FiLM-modulated by an
+                       SNR embedding of this size.
+        masked_power:  if True, padded positions transmit zero energy and
+                       the per-sentence energy budget (L * channel_dim) is
+                       spent on the valid tokens only.  Otherwise every
+                       position, padding included, gets unit average power.
+    """
+
+    def __init__(self, d_model: int, channel_dim: int,
+                 film_dim: int = None, masked_power: bool = False):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(d_model, 256),
             nn.ReLU(),
             nn.Linear(256, channel_dim),
         )
+        self.film = FiLM(film_dim, 256) if film_dim else None
+        self.masked_power = masked_power
 
-    def forward(self, x):
-        out = self.net(x)                           # (B, L, channel_dim)
+    def forward(self, x, snr_emb=None, valid_mask=None):
+        h = self.net[1](self.net[0](x))
+        if self.film is not None:
+            h = self.film(h, snr_emb)
+        out = self.net[2](h).float()                # (B, L, channel_dim)
+
+        if self.masked_power and valid_mask is not None:
+            out = out * valid_mask.unsqueeze(-1).to(out.dtype)
+            budget = out.size(-2) * out.size(-1)    # same energy as unit power on all slots
+            energy = torch.sum(out ** 2, dim=(-2, -1), keepdim=True) + 1e-12
+            return out * torch.sqrt(budget / energy)
+
         # power normalisation: unit average power per sample
         power = torch.mean(out ** 2, dim=(-2, -1), keepdim=True) + 1e-12
         return out / torch.sqrt(power)
 
 
 class ChannelDecoder(nn.Module):
-    """Maps channel_dim → d_model per time-step."""
+    """Maps channel_dim → d_model per time-step (optionally SNR-conditioned)."""
 
-    def __init__(self, channel_dim: int, d_model: int):
+    def __init__(self, channel_dim: int, d_model: int, film_dim: int = None):
         super().__init__()
         self.net = nn.Sequential(
             nn.Linear(channel_dim, 256),
             nn.ReLU(),
             nn.Linear(256, d_model),
         )
+        self.film = FiLM(film_dim, 256) if film_dim else None
 
-    def forward(self, x):
-        return self.net(x)
+    def forward(self, x, snr_emb=None):
+        h = self.net[1](self.net[0](x))
+        if self.film is not None:
+            h = self.film(h, snr_emb)
+        return self.net[2](h)

@@ -53,3 +53,11 @@ class AverageMeter:
         self.sum += val * n
         self.count += n
         self.avg = self.sum / self.count
+
+
+def amp_dtype(device):
+    """Mixed-precision dtype for CUDA: bf16 on Ampere+, fp16 otherwise."""
+    if device.type != "cuda":
+        return None
+    major, _ = torch.cuda.get_device_capability(device)
+    return torch.bfloat16 if major >= 8 else torch.float16
