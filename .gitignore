@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# OS
+.DS_Store
+
+# Model weights (too large for git; regenerate with train.py / finetune_bert.py)
+*.pt
+*.pth
+*.bin
+*.safetensors
+
+# Preprocessed data (regenerate with preprocess.py)
+data/
+
+# Generated outputs
+results/
+
+# Reference PDFs and personal reports
+Project Resource/
+
+# Personal working notes
+run.txt
+thesis/latex_full_report/figure_prompts_llm.txt
+
+# LaTeX build artifacts
+*.aux
+*.log
+*.toc
+*.out
+*.blg
+*.bbl
+*.fls
+*.fdb_latexmk
+*.synctex.gz

@@ -1,0 +1,131 @@
+\documentclass[a4paper,12pt]{article}
+
+% ---------- Geometry & typography ----------
+\usepackage{fullpage}          % standard ~1 inch margins
+\usepackage[T1]{fontenc}
+\usepackage{mathptmx}          % Times-like serif (roman, maths)
+\usepackage[scaled]{helvet}    % Times-compatible sans (headings optional)
+\usepackage{courier}           % Typewriter
+\usepackage{textcomp}
+
+% ---------- Layout helpers ----------
+\usepackage{graphicx}
+\graphicspath{{figures/}}
+\usepackage{amsmath}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{caption}
+\usepackage{setspace}
+\usepackage{titlesec}
+\usepackage{hyperref}
+\usepackage{placeins} % \FloatBarrier: keep floats from crossing major sections
+\usepackage{siunitx}
+\usepackage{xurl}
+\usepackage{indentfirst}       % ensure first paragraph after every heading is indented
+
+\hypersetup{
+    colorlinks=true,
+    linkcolor=black,
+    citecolor=black,
+    urlcolor=blue
+}
+
+% ---------- Line spacing: fixed value 20 pt (Word equivalent) ----------
+% With 12 pt body, default baseline is about 14.5 pt; 20/14.5 ~= 1.379
+\setstretch{1.379}
+
+% ---------- Paragraph indentation: 2 Chinese-width characters ~ 2em ----------
+\setlength{\parindent}{2em}
+\setlength{\parskip}{0pt}
+\emergencystretch=2em
+
+% ---------- Heading font sizes per template ----------
+% First level: Times New Roman, 16 pt
+% Second level: Times New Roman, 14 pt
+% Third level: Times New Roman, 12 pt
+% Text part: Times New Roman, 12 pt (provided by documentclass option + mathptmx)
+\titleformat{\section}
+  {\normalfont\bfseries\fontsize{16pt}{20pt}\selectfont}
+  {\thesection}{1em}{}
+\titleformat{\subsection}
+  {\normalfont\bfseries\fontsize{14pt}{20pt}\selectfont}
+  {\thesubsection}{1em}{}
+\titleformat{\subsubsection}
+  {\normalfont\bfseries\fontsize{12pt}{20pt}\selectfont}
+  {\thesubsubsection}{1em}{}
+
+% Compact headings: no extra ``blank line'' before titles; spacing in fixed pt
+% (left, before-title, after-title). After-title keeps one logical line gap to body.
+\titlespacing*{\section}{0pt}{4pt plus 1pt minus 1pt}{6pt plus 1pt minus 1pt}
+\titlespacing*{\subsection}{0pt}{3pt plus 1pt minus 1pt}{5pt plus 1pt minus 1pt}
+\titlespacing*{\subsubsection}{0pt}{2pt plus 1pt minus 1pt}{4pt plus 1pt minus 1pt}
+
+% Captions: same size as body (12 pt); only ``Figure N.'' / ``Table N.'' bold (IEEE-style)
+\captionsetup{
+  font=normalsize,
+  labelfont=bf,
+  textfont=normalfont,
+  labelsep=period,
+  skip=6pt
+}
+% Prefer floats on text pages; avoid dedicated float-only pages where possible
+\setcounter{topnumber}{6}
+\setcounter{bottomnumber}{6}
+\setcounter{totalnumber}{10}
+\renewcommand{\topfraction}{0.90}
+\renewcommand{\bottomfraction}{0.90}
+\renewcommand{\textfraction}{0.07}
+\renewcommand{\floatpagefraction}{0.88}
+% Tall figures shrink to fit roughly half a text page (width unchanged when height binds)
+\newcommand{\ThesisIncludeGraphics}[2][0.82]{%
+  \includegraphics[width=#1\linewidth,height=0.45\textheight,keepaspectratio]{#2}%
+}
+
+\begin{document}
+\hypersetup{pageanchor=false}
+
+\pagenumbering{roman}
+
+\input{chapters/abstract}
+\clearpage
+\input{chapters/acknowledgements}
+\clearpage
+\tableofcontents
+\clearpage
+\hypersetup{pageanchor=true}
+\pagenumbering{arabic}
+
+% Each major numbered section (1--4) starts on a new page.
+\section{Introduction}
+\input{chapters/01_introduction}
+\FloatBarrier
+
+\clearpage
+\section{Body of the Report}
+\input{chapters/02_body_report}
+\FloatBarrier
+
+\clearpage
+\section{Analysis and Discussion}
+\input{chapters/03_analysis_discussion}
+\FloatBarrier
+
+\clearpage
+\section{Conclusions and Further Work}
+\input{chapters/04_conclusions_futurework}
+\FloatBarrier
+
+\clearpage
+
+\addcontentsline{toc}{section}{References}
+\bibliographystyle{unsrt}
+\bibliography{refs}
+\clearpage
+
+\appendix
+\section{Appendices}
+\input{chapters/appendix_a}
+\FloatBarrier
+
+\end{document}

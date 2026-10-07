@@ -1,0 +1,105 @@
+\subsection{Main Findings under AWGN}
+
+The AWGN results in Table~\ref{tab:awgn-main} show a clear and interpretable pattern: channel-aware improvements are most effective in challenging SNR regimes and gradually saturate at high SNR. At \SI{-10}{dB}, the Improved model yields a BLEU-4 gain of +0.0140 and a Word Accuracy gain of +0.0348 over the Baseline. Word Accuracy gain is particularly meaningful because it reflects direct token reconstruction quality under severe channel noise, where any systematic improvement necessarily propagates into subsequent n-gram metrics and into sentence-level semantic metrics. The gain is also consistent with the design motivation of the decoder-side SNR-aware cross-attention, which gives the reconstructor explicit access to channel quality at the moment of token generation.
+
+Figures~\ref{fig:bleu_awgn} and~\ref{fig:wordacc_awgn} visualize the AWGN trends corresponding to Table~\ref{tab:awgn-main}: Figure~\ref{fig:bleu_awgn} focuses on BLEU-$4$, while Figure~\ref{fig:wordacc_awgn} shows Word Accuracy, making the low-SNR gain and high-SNR saturation easier to see.
+\begin{figure}[!htb]
+\centering
+\ThesisIncludeGraphics{fig_bleu_awgn_strategies.pdf}
+\caption{AWGN: BLEU-$4$ versus SNR for baseline and improved configurations (greedy, Beam5, and FT-BERT post-processing where \texttt{LLM\_BLEU-4} is present in the export).}
+\label{fig:bleu_awgn}
+\end{figure}
+\begin{figure}[!htb]
+\centering
+\ThesisIncludeGraphics{fig_wordacc_awgn.pdf}
+\caption{AWGN: word accuracy versus SNR for baseline versus improved (greedy decoding).}
+\label{fig:wordacc_awgn}
+\end{figure}
+\FloatBarrier
+
+At medium and high SNR (from \SI{5}{dB} upward), both models approach very high absolute scores (BLEU-4 above 0.96 and Word Accuracy above 0.95), so relative gains become small. This saturation does not invalidate the improvement. Instead, it confirms that low-SNR robustness is the true stress test for semantic communication transceivers, and that gains measured in a ``safe'' regime should not be interpreted as evidence of general superiority. Reporting both the low-SNR and high-SNR halves of the curve is therefore essential and is the reason why the experimental grid is extended down to \SI{-10}{dB} rather than stopping at \SI{0}{dB}.
+
+Another practical observation is metric consistency at low SNR: BLEU-4, Word Accuracy, BERTScore, and Sentence Similarity all move in the same direction for the Improved model relative to the Baseline at \SI{-10}{dB}. This joint movement increases the confidence that the gains are not metric artefacts. In many text-generation tasks, lexical and semantic metrics may diverge sharply, so the fact that they agree here supports the claim that channel-aware redesign improves both local token accuracy and global sentence-level reconstruction quality. The joint movement also implies that the Improved model does not simply trade BLEU for paraphrase-like semantic matches, which would be a typical failure mode of semantic-only regularization.
+
+Qualitative inspection of representative low-SNR outputs also suggests that early decoding errors are important. When the first few tokens are corrupted, later predictions are often affected by the incorrect prefix. This is consistent with the autoregressive nature of the decoder, where each prediction depends on previously generated tokens. Therefore, improvements in early-token reliability can have a noticeable effect on the overall sequence quality, especially under severe channel noise.
+
+\FloatBarrier
+\subsection{Ablation Analysis: Semantic Loss}
+
+The ablation results in Table~\ref{tab:ablation} reveal an important negative finding: removing the semantic-loss term improves BLEU-4 at every tested SNR point. The largest gap appears at \SI{-10}{dB}, where the NoSem variant exceeds the semantic-loss version by +0.0159 in BLEU-4. This indicates that, under the current implementation, semantic regularization introduces weak but consistent negative transfer. The result is particularly important because semantic communication is often expected to benefit naturally from a semantic-level objective. However, the evidence shows that a conceptually reasonable auxiliary loss does not automatically improve the final communication objective.
+
+The most direct explanation is gradient conflict between token-level reconstruction and embedding-level semantic alignment. Cross-entropy encourages the decoder to assign high probability to the exact target token at each autoregressive step. In contrast, the semantic-consistency loss encourages the reconstructed representation to remain close to a reference embedding. These objectives may agree in many cases, but they are not guaranteed to point in the same optimization direction. For example, if the target word is “increase” and the decoder predicts “improve”, the two words may be close in semantic embedding space, but the prediction is still incorrect from the perspective of token-level reconstruction. In such a case, the semantic loss may partially reward a prediction that cross-entropy must penalize, making the composite training signal less focused.
+
+This conflict becomes more harmful under low-SNR conditions. When the channel perturbation is strong, the received latent representation is already noisy and the decoder must prioritize stable token recovery. If the semantic-loss weight remains non-zero in this regime, the model may be encouraged to optimize a noisy or weakly discriminative semantic target instead of learning a sharper reconstruction boundary. The sigmoid-based SNR-conditioned weighting partly addresses this issue by reducing the semantic-loss contribution at low SNR, but the ablation results show that this adjustment is not sufficient to remove the negative effect.
+
+The fact that the NoSem variant outperforms the semantic-loss variant across all SNR points also suggests that the problem is not only low-SNR over-regularization. If the semantic loss were merely too strong under noisy conditions, one would expect the semantic-loss version to recover or outperform the NoSem version at high SNR, where the received representation is cleaner. Since this does not occur, the more likely explanation is objective misalignment: the specific semantic-consistency term used in this project does not provide useful additional supervision for the final autoregressive reconstruction task.
+
+Therefore, Innovation B should be interpreted as a valuable but unsuccessful attempt rather than a confirmed improvement. The project does not show that semantic regularization is useless in general. Instead, it shows that the present formulation is not sufficiently aligned with the downstream reconstruction objective. Future work should redesign this component using conflict-aware weighting, delayed semantic-loss activation, uncertainty-based loss scaling, or contrastive sentence-level objectives. Such methods may preserve the intended meaning-level supervision while reducing early-stage interference with token-level learning.
+
+\FloatBarrier
+\subsection{Cross-Channel Analysis: Rayleigh Robustness}
+
+While the AWGN results validate the effectiveness of the proposed design under additive noise, it is equally important to examine whether these gains generalize to more realistic fading channels. Table~\ref{tab:rayleigh} shows that AWGN-effective improvements do not directly transfer to Rayleigh fading. In the low and medium SNR ranges, BLEU-4 is slightly lower for the Improved model than for the Baseline, and only at high SNR does the difference become near-zero or weakly positive. This behavior is notable because the Improved model was explicitly designed to be channel-aware, yet it does not consistently outperform the Baseline under the more variable fading channel.
+
+The main reason is that scalar SNR conditioning captures only average channel quality, not the instantaneous structure of a fading process. In an AWGN channel, the transmitted symbols are mainly corrupted by independent additive Gaussian noise. Under this assumption, scalar SNR is a relatively informative summary of the channel condition. In a Rayleigh fading channel, however, the received symbols are affected by multiplicative fading coefficients as well as additive noise. Even when the average SNR is fixed, the reliability of individual transmitted symbols can vary substantially due to deep fades and short-time channel fluctuation.
+
+From a representation perspective, Rayleigh fading can distort the semantic latent space in a less uniform way than AWGN. AWGN tends to perturb the transmitted latent representation around its original location, whereas fading may suppress or amplify different parts of the transmitted signal before additive noise is introduced. If the decoder only receives an average SNR value, it may know that the channel is generally poor, but it cannot identify which latent dimensions or symbol positions are particularly unreliable. Therefore, the decoder-side SNR-aware attention can adjust its global behavior, but it cannot selectively distrust corrupted components of the received representation.
+
+This explains why “SNR-aware” is not equivalent to “fading-aware”. The current design gives the model useful information about average channel severity, but it does not provide sufficiently expressive information about fading dynamics. A more robust Rayleigh-oriented design would require richer channel-state descriptors, such as estimated channel coefficients, short-term fading statistics, per-symbol reliability indicators, or learned channel-state embeddings. These features could allow the receiver to distinguish between globally noisy transmission and locally unreliable latent symbols.
+
+Another plausible factor is the training distribution. If the Rayleigh training schedule does not sufficiently emphasize low-SNR and deep-fade cases, the model may allocate too much capacity to relatively easier conditions and fail to develop strong robustness against severe fading events. A curriculum-style training strategy that progressively increases exposure to difficult fading samples could therefore improve generalization. Overall, the key limitation is not the absence of channel awareness, but the insufficient expressiveness of scalar SNR as a descriptor of fading dynamics.
+
+Figure~\ref{fig:bleu_rayleigh} plots BLEU-$4$ versus SNR for the Rayleigh-trained baseline and improved models (greedy decoding).
+\begin{figure}[!htb]
+\centering
+\ThesisIncludeGraphics{fig_bleu_rayleigh.pdf}
+\caption{Rayleigh channel: BLEU-$4$ versus SNR for baseline and improved transceivers (greedy decoding).}
+\label{fig:bleu_rayleigh}
+\end{figure}
+\FloatBarrier
+
+\subsection{LLM Refinement Analysis}
+
+The FT-BERT results in Table~\ref{tab:strategy} remain below the no-LLM greedy baseline across all SNR points, even after the refiner has been fine-tuned on the Europarl corpus. Although this approach is much more controlled than the earlier unconstrained GPT-style rewriting, it still introduces harmful modifications when the base decoder is already performing reasonably well. This outcome is consistent with the broader narrative of this project: semantic communication reconstruction is not identical to natural language modelling, and improving linguistic plausibility is not the same as improving transmission fidelity.
+
+The most likely mechanism is \textbf{over-correction under low error entropy}. When base decoding quality is already strong, even a small number of wrong replacements can dominate marginal improvements. In other words, language plausibility and transmission fidelity are related but not identical objectives, and a replacement that improves plausibility can still damage fidelity. The confidence-driven masking partially mitigates this issue but cannot eliminate it, because a low-confidence decoder token can still happen to be correct, and BERT MLM has no way to see the original transmitted message.
+
+A second contributing factor is domain mismatch. Although the refiner is fine-tuned on Europarl and is therefore closer to the evaluation domain than an off-the-shelf BERT, fine-tuning mainly adjusts the vocabulary distribution rather than the conditional distribution over possible corrections of noisy decoder output. A more effective refinement would require confidence scores that are actually calibrated against true token errors, which neither the decoder nor the BERT head provides out of the box. This is the rationale for the Future Work proposal on dedicated confidence calibration.
+
+A third observation is that the combined Beam5 + FT-BERT configuration is the worst of all tested configurations at \SI{-10}{dB}. This is not a coincidence: once beam search has already absorbed most of the recoverable decoding errors, additional post-editing operates in a “low-entropy” regime where virtually every correction is a coin flip. This again supports the ordering principle developed in the conclusions section, which is to maximize base decoder quality first and only apply external correction when the decoder is demonstrably uncertain, and the candidate replacement can be validated under a fidelity constraint.
+
+\subsection{Decoding Strategy Analysis}
+
+Among the post-training modifications evaluated in this project, beam search gives the most consistent improvement in the tested low-SNR AWGN setting. At \SI{-10}{dB}, BLEU-4 rises from 0.4329 under greedy decoding to 0.4552 under Beam5, giving an absolute gain of +0.0223. Gains also remain visible at \SI{-5}{dB} and \SI{0}{dB}, while they become negligible at higher SNR values because the decoder is already close to the practical performance ceiling.
+
+The reason for this improvement can be understood from a probabilistic perspective. Greedy decoding selects the most probable token at each step and therefore optimizes locally. Once an incorrect token is selected early, all later predictions are conditioned on a wrong prefix, and the decoder may not be able to recover. This problem is especially severe at low SNR because channel noise flattens the token probability distribution and increases uncertainty among competing candidates. Beam search better approximates the sequence-level maximum-likelihood solution by maintaining several partial hypotheses and selecting the best complete sequence after considering a wider search space.
+
+This also explains why beam search is particularly suitable for semantic communication under noisy channels. The received latent representation may still contain useful information even when the top token at a single decoding step is unreliable. Greedy decoding may discard that information too early, while beam search preserves alternative hypotheses long enough for later context to disambiguate them. Therefore, beam search does not create new semantic knowledge; it makes better use of the probability distribution already learned by the trained decoder.
+
+The comparison with FT-BERT refinement further clarifies the advantage of beam search. Both methods are inference-stage enhancements, but they operate through different mechanisms. Beam search explores alternative sequences within the decoder’s own probability model, so its decisions remain tied to the received latent representation. In contrast, BERT refinement introduces an external masked-language model that mainly evaluates linguistic plausibility after decoding has already occurred. Although this external prior can be useful when the decoded sentence is severely corrupted, it can also replace a correct but low-confidence token with a fluent but incorrect alternative.
+
+The combined Beam5 + FT-BERT configuration performs worse than Beam5 alone at every tested SNR point. This indicates that once beam search has already improved the base hypothesis, the remaining errors become too sparse, too content-specific, or too uncertain for generic masked-language correction to fix reliably. In this low-error regime, external refinement has limited positive headroom but substantial downside risk. A single unnecessary replacement can reduce BLEU, Word Accuracy, and semantic fidelity, especially if the replacement changes a key content word.
+
+From an engineering perspective, beam search provides a useful trade-off in this experimental setting because it requires no retraining, introduces no additional language-model dependency, and improves the low-SNR AWGN cases tested in this project. The measured latency increase of approximately 1.8 times compared with greedy decoding is acceptable for the text-based scenario considered here, although this cost should still be reassessed for longer sequences or real-time applications. Therefore, Beam5 is a reasonable inference choice for the current system, while LLM-based refinement should remain conditional on decoder uncertainty and should require additional fidelity constraints before deployment.
+
+\subsection{Integrated Design Insights}
+
+By combining all available evidence, the project proposes three practical design principles for future semantic communication transceivers:
+
+\begin{enumerate}
+    \item \textbf{Prioritize in-model channel awareness} over external correction. Channel-quality information should reach both encoding and decoding stages, because downstream reconstruction carries most of the reliability burden.
+    \item \textbf{Treat semantic regularization as conditional}, not universally beneficial. Fixed or naively scheduled semantic losses can produce negative transfer. Future implementations should rely on conflict-aware weighting or gated activation rather than on fixed hyperparameters.
+    \item \textbf{Prefer conservative inference upgrades} (beam search) before introducing flexible post-editing. Inference strategy gains are reproducible, low-risk, and require no retraining, whereas LLM post-refinement can act as a silent regression when base quality is high.
+\end{enumerate}
+
+These observations are based on the measured results rather than on the initial design assumptions. They show that the usefulness of a module depends on its interaction with the channel model, training objective, and decoding procedure. In particular, modules that appear reasonable in isolation may become ineffective or harmful after being combined with other components.
+
+The main implication is that semantic communication transceiver design should be evaluated through controlled comparisons rather than through architectural complexity alone. The results connect metric changes to specific mechanisms, including decoder-side channel awareness, gradient conflict in multi-objective training, confidence calibration in post-refinement, and sequence-level uncertainty during decoding.
+
+\subsection{Discussion Summary}
+
+The discussion identifies different levels of support for the proposed modifications. Innovation A is supported under low-SNR AWGN conditions, where the Improved model outperforms the Baseline in BLEU-4 and Word Accuracy. Innovation B is not supported by the current ablation results, since removing the semantic-loss term improves BLEU-4 across all tested SNR points. Innovation C also remains uncertain, because confidence-driven FT-BERT refinement does not provide reliable net gains on top of the Improved decoder.
+
+Beam search gives the clearest inference-stage improvement in the current experiments. Unlike external refinement, it does not introduce an additional language model or rewrite the decoded sentence after the communication process. Instead, it improves sequence selection within the decoder’s own probability distribution. This makes it less likely to introduce semantic drift than LLM-based post-refinement.
+
+Overall, the results suggest that robustness improvements in semantic communication are strongly dependent on channel regime, decoder quality, objective alignment, and inference-time interaction. Therefore, each module should be evaluated not only by its standalone motivation, but also by its measured effect after integration into the full transceiver.

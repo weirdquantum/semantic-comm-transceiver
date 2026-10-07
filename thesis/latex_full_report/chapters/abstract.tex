@@ -1,0 +1,13 @@
+\section*{Abstract}
+\addcontentsline{toc}{section}{Abstract}
+
+Semantic communication shifts the objective of communication systems from bit-level fidelity to meaning-level fidelity, making it a promising direction for post-Shannon wireless communication. This project investigates a DeepSC-style Transformer-based semantic transceiver for text transmission over AWGN and Rayleigh fading channels. The study focuses on three improvement directions: SNR-aware attention, adaptive semantic-loss weighting, and language-model-based post-refinement. A baseline system is first reproduced, after which several modified variants are evaluated under the same data split, SNR grid, and metric definitions.
+
+The results show that the improved transceiver gives measurable gains under low-SNR AWGN conditions. At \SI{-10}{dB}, BLEU-4 increases from 0.4189 to 0.4329, and Word Accuracy increases from 0.4425 to 0.4773. However, the semantic-loss ablation shows that removing the semantic-loss term improves BLEU-4 across all tested SNR points, indicating that the current semantic regularization is not well aligned with token-level reconstruction. Under Rayleigh fading, the gains are limited and mixed, suggesting that scalar SNR conditioning is insufficient for strongly time-varying channels. Confidence-driven BERT refinement also fails to provide reliable net gains because of over-correction. In comparison, beam search decoding gives the most consistent inference-stage improvement, reaching BLEU-4 = 0.4552 at \SI{-10}{dB} without retraining.
+
+Overall, the project suggests that robust channel-aware design and decoding-strategy optimization are more reliable than unconstrained external post-refinement in this setting.
+
+\vspace{0.5em}
+\noindent\textbf{Keywords:} Semantic Communication; DeepSC; SNR-Adaptive Attention;
+Adaptive Semantic Loss; BERT Masked Refinement; Beam Search; Rayleigh Fading;
+Transformer.

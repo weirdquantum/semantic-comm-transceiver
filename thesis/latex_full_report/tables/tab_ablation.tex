@@ -1,0 +1,21 @@
+\begin{table}[htbp]
+\centering
+\caption{Ablation of semantic loss under AWGN (Improved vs Improved-NoSem).}
+\begin{tabular}{cccccc}
+\toprule
+SNR (dB) & \multicolumn{2}{c}{WordAcc} & \multicolumn{2}{c}{BLEU-4} & NoSem - Improved (BLEU-4) \\
+\cmidrule(lr){2-3}\cmidrule(lr){4-5}
+& Improved & NoSem & Improved & NoSem & \\
+\midrule
+-10 & 0.4773 & 0.4837 & 0.4329 & 0.4488 & +0.0159 \\
+-5  & 0.6130 & 0.6210 & 0.7386 & 0.7448 & +0.0062 \\
+0   & 0.7440 & 0.7446 & 0.8375 & 0.8398 & +0.0023 \\
+5   & 0.9674 & 0.9683 & 0.9685 & 0.9709 & +0.0024 \\
+10  & 0.9954 & 0.9964 & 0.9934 & 0.9946 & +0.0012 \\
+15  & 0.9965 & 0.9976 & 0.9944 & 0.9959 & +0.0015 \\
+20  & 0.9966 & 0.9976 & 0.9945 & 0.9960 & +0.0016 \\
+\bottomrule
+\end{tabular}
+\label{tab:ablation}
+\end{table}
+

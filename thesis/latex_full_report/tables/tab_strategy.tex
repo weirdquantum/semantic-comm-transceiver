@@ -1,0 +1,19 @@
+\begin{table}[htbp]
+\centering
+\caption{Inference strategy comparison on Improved-AWGN (BLEU-4).}
+\begin{tabular}{ccccc}
+\toprule
+SNR (dB) & Greedy (No LLM) & Beam5 & FT-BERT (LLM) & Beam5 + FT-BERT \\
+\midrule
+-10 & 0.4329 & 0.4552 & 0.4191 & 0.4046 \\
+-5  & 0.7386 & 0.7496 & 0.7348 & 0.7326 \\
+0   & 0.8375 & 0.8494 & 0.8339 & 0.8341 \\
+5   & 0.9685 & 0.9726 & 0.9650 & 0.9654 \\
+10  & 0.9934 & 0.9934 & 0.9905 & 0.9910 \\
+15  & 0.9944 & 0.9945 & 0.9934 & 0.9935 \\
+20  & 0.9945 & 0.9946 & 0.9933 & 0.9938 \\
+\bottomrule
+\end{tabular}
+\label{tab:strategy}
+\end{table}
+
