@@ -34,6 +34,10 @@ TRAIN_CONFIGS = [
     ("improved_rayleigh_no_csi", "improved", "rayleigh", ["--no_csi_snr", "--tag", "no_csi"]),
 ]
 
+# Main models get the full metric set (BERTScore, SentSim) and beam search.
+# Ablation variants only need BLEU / WordAcc with greedy decoding to show
+# each component's contribution, which keeps evaluation time manageable.
+MAIN_CONFIGS = ["baseline_awgn", "improved_awgn", "baseline_rayleigh", "improved_rayleigh"]
 # models that additionally get the LLM fusion refiner
 LLM_CONFIGS = ["improved_awgn", "improved_rayleigh"]
 BEAM = 5
@@ -64,8 +68,9 @@ def main():
     env = dict(os.environ)
     train_extra, eval_extra, bert_extra = [], [], []
     if args.smoke:
-        env.setdefault("SC_CKPT_DIR", os.path.join(ROOT, "smoke_checkpoints"))
-        env.setdefault("SC_RESULT_DIR", os.path.join(ROOT, "smoke_checkpoints", "results"))
+        # always isolated, so a smoke run can never mark real runs as DONE
+        env["SC_CKPT_DIR"] = os.path.join(ROOT, "smoke_checkpoints")
+        env["SC_RESULT_DIR"] = os.path.join(ROOT, "smoke_checkpoints", "results")
         args.epochs = 1
         train_extra = ["--limit_train_batches", "20", "--limit_val_samples", "256"]
         eval_extra = ["--max_samples", "64", "--snr_list", "0", "--no_bertscore"]
@@ -108,8 +113,12 @@ def main():
             if not os.path.isfile(ckpt_of(tag)):
                 print(f"  Checkpoint not found for {tag}, skipping eval.")
                 continue
-            evaluate(tag, channel, [], "")
-            evaluate(tag, channel, ["--beam_width", str(BEAM)], f"beam{BEAM}")
+            if tag in MAIN_CONFIGS:
+                evaluate(tag, channel, [], "")
+                # beam vs greedy is compared on BLEU; BERTScore is the slowest metric
+                evaluate(tag, channel, ["--beam_width", str(BEAM), "--no_bertscore"], f"beam{BEAM}")
+            else:
+                evaluate(tag, channel, ["--no_bertscore"], "")
 
         if not args.no_llm:
             bert_dir = os.path.join(ckpt_root, "bert_europarl")

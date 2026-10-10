@@ -96,7 +96,7 @@ def compute_bert_score(pred_texts, ref_texts, device="cpu"):
     try:
         if "bertscore" not in _SCORERS:
             from bert_score import BERTScorer
-            _SCORERS["bertscore"] = BERTScorer(lang="en", device=str(device))
+            _SCORERS["bertscore"] = BERTScorer(lang="en", device=str(device), batch_size=128)
         P, R, F1 = _SCORERS["bertscore"].score(pred_texts, ref_texts, verbose=False)
         return {
             "BERTScore_P": float(P.mean()),

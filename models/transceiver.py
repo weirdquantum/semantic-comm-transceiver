@@ -98,14 +98,15 @@ class _DeepSCBase(nn.Module):
         scores[:, 0] = 0.0                      # only one live hypothesis at start
         finished = torch.zeros(B * K, dtype=torch.bool, device=device)
         offset = (torch.arange(B, device=device) * K).unsqueeze(1)
+        V = self.vocab_size
+        # finished hypotheses can only be extended with PAD, at no cost
+        pad_only = torch.full((1, V), float("-inf"), device=device)
+        pad_only[0, self.pad_idx] = 0.0
 
         for _ in range(max_len - 1):
             logits = self._decode(ys, memory, src_mask, ctx)[:, -1, :].float()
             logp = torch.log_softmax(logits, dim=-1)              # (BK, V)
-            # finished hypotheses can only be extended with PAD, at no cost
-            logp[finished] = float("-inf")
-            logp[finished, self.pad_idx] = 0.0
-            V = logp.size(-1)
+            logp = torch.where(finished.unsqueeze(1), pad_only, logp)
 
             cand = (scores.view(-1, 1) + logp).view(B, K * V)
             scores, top_idx = cand.topk(K, dim=-1)                # (B, K)

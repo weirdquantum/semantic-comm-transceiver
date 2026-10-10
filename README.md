@@ -165,7 +165,14 @@ export SC_CKPT_DIR=/root/autodl-tmp/checkpoints
 nohup bash scripts/run_cloud.sh > run.log 2>&1 &
 ```
 
-**Colab** (GPU runtime):
+**Colab, all-in-one notebook** (recommended): open
+[`notebooks/train_v2_colab.ipynb`](https://colab.research.google.com/github/weirdquantum/semantic-comm-transceiver/blob/v2-improvements/notebooks/train_v2_colab.ipynb)
+in Colab. It embeds every source file as a `%%writefile` cell, so nothing
+needs to be cloned; it expects the data parts in
+`MyDrive/semantic-comm-transceiver/data/`. After changing any source file,
+regenerate it with `python scripts/make_colab_notebook.py`.
+
+**Colab, from a clone** (GPU runtime):
 
 ```python
 from google.colab import drive; drive.mount('/content/drive')
