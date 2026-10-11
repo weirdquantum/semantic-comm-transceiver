@@ -3,26 +3,25 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+.pytest_cache/
 
 # OS
 .DS_Store
 
-# Model weights (too large for git; regenerate with train.py / finetune_bert.py)
+# Data and run outputs (regenerate with preprocess.py / run_all.py)
+data/
+checkpoints/
+results/
+smoke_checkpoints/
+
+# Model weights
 *.pt
 *.pth
 *.bin
 *.safetensors
 
-# Preprocessed data (regenerate with preprocess.py)
-data/
-
-# Generated outputs
-results/
-
-# Reference PDFs and personal reports
+# Reference PDFs and personal notes
 Project Resource/
-
-# Personal working notes
 run.txt
 thesis/latex_full_report/figure_prompts_llm.txt
 
@@ -36,6 +35,3 @@ thesis/latex_full_report/figure_prompts_llm.txt
 *.fls
 *.fdb_latexmk
 *.synctex.gz
-
-# Smoke-test outputs (run_all.py --smoke)
-smoke_checkpoints/

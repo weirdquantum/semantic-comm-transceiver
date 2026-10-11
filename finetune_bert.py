@@ -1,18 +1,18 @@
 """
-Fine-tune bert-base-uncased on Europarl data for Masked Language Modeling.
+Fine-tune bert-base-uncased on Europarl training sentences (masked LM).
 
-This produces a domain-adapted BERT MLM that the LLMRefiner can use
-to correct low-confidence decoder outputs more accurately.
+The domain-adapted model is used by the decoder–BERT fusion refiner
+(models/llm_refiner.py).  Validation sentences are excluded because the
+fusion weights are tuned on them.
 
 Usage:
-    python finetune_bert.py                        # defaults
-    python finetune_bert.py --epochs 5 --lr 2e-5   # custom
+    python finetune_bert.py
+    python finetune_bert.py --epochs 5 --lr 2e-5
 """
 
 import argparse
-import os
-import pickle
 import math
+import os
 
 import torch
 from torch.utils.data import Dataset, DataLoader
@@ -23,7 +23,7 @@ from transformers import (
 )
 
 from config import Config
-from dataset import train_val_indices
+from dataset import load_sentences, train_val_indices
 
 
 class EuroparlTextDataset(Dataset):
@@ -60,12 +60,9 @@ def main():
     device = Config.device
     os.makedirs(args.save_dir, exist_ok=True)
 
-    sent_path = os.path.join(Config.data_dir, "sentences.pkl")
-    with open(sent_path, "rb") as f:
-        all_sents = pickle.load(f)
-    # exclude the validation sentences used to tune the LLM fusion weights
-    train_idx, _ = train_val_indices(len(all_sents["train"]))
-    train_sents = [all_sents["train"][i] for i in train_idx[:args.max_sentences]]
+    sentences = load_sentences()["train"]
+    train_idx, _ = train_val_indices(len(sentences))
+    train_sents = [sentences[i] for i in train_idx[:args.max_sentences]]
     print(f"Fine-tuning on {len(train_sents)} Europarl sentences")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)

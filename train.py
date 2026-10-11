@@ -35,7 +35,7 @@ from config import Config
 from dataset import get_dataloader, load_vocab
 from models.transceiver import BaselineDeepSC, ImprovedDeepSC
 from models.losses import CompositeLoss
-from utils import set_seed, AverageMeter, amp_dtype
+from utils import AverageMeter, amp_dtype, preserve_rng, set_seed
 
 
 def parse_args():
@@ -48,7 +48,7 @@ def parse_args():
     p.add_argument("--alpha", type=float, default=Config.alpha_ce)
     p.add_argument("--beta", type=float, default=None,
                    help="Feature-denoising loss weight "
-                        "(default: 0 for baseline, Config.beta_semantic for improved)")
+                        "(default: 0 for baseline, Config.beta_feat for improved)")
     p.add_argument("--no_film", action="store_true",
                    help="Improved: disable SNR-conditioned channel coder")
     p.add_argument("--no_masked_power", action="store_true",
@@ -68,7 +68,7 @@ def parse_args():
                    help="Smoke testing: use only N validation sentences")
     args = p.parse_args()
     if args.beta is None:
-        args.beta = 0.0 if args.model == "baseline" else Config.beta_semantic
+        args.beta = 0.0 if args.model == "baseline" else Config.beta_feat
     return args
 
 
@@ -186,8 +186,7 @@ def validate(model, loader, device, channel_type, dtype,
     """
     model.eval()
     accs = {}
-    devices = [torch.cuda.current_device()] if device.type == "cuda" else []
-    with torch.random.fork_rng(devices=devices):
+    with preserve_rng(device):
         torch.manual_seed(1234)
         for snr_val in snr_list:
             correct = total = 0
@@ -209,7 +208,6 @@ def validate(model, loader, device, channel_type, dtype,
 def main():
     args = parse_args()
     set_seed(args.seed)
-    Config.ensure_dirs()
     device = Config.device
     if device.type == "cuda":
         torch.backends.cudnn.benchmark = True

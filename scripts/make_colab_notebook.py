@@ -12,7 +12,7 @@ import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / "notebooks" / "train_v2_colab.ipynb"
+OUT = ROOT / "notebooks" / "train_colab.ipynb"
 PROJ = "/content/drive/MyDrive/semantic-comm-transceiver"
 
 # (path, section title, one-line explanation)
@@ -23,14 +23,14 @@ FILES = [
     ("dataset.py", "数据加载", "读取 pkl 数据；从训练集固定划出 5% 作为验证集。"),
     ("models/__init__.py", "模型包入口", ""),
     ("models/channel.py", "信道模型",
-     "AWGN 和 Rayleigh 信道。v2：Rayleigh 归一化为 E|h|²=1，并返回接收端的有效 SNR。"),
+     "AWGN 和 Rayleigh（E|h|²=1）信道，同时返回接收端的有效 SNR。"),
     ("models/modules.py", "网络模块",
-     "SNR 自适应注意力、编码/解码层。v2：信道编解码器加入 FiLM（感知 SNR），"
-     "以及只给有效 token 分配能量的功率归一化。"),
+     "SNR 自适应注意力、编码/解码层、FiLM（让信道编解码器感知 SNR）、"
+     "只给有效 token 分配能量的功率归一化。"),
     ("models/transceiver.py", "收发机模型",
      "BaselineDeepSC 与 ImprovedDeepSC；共享的贪心解码、批量束搜索、候选词提取。"
      "Improved 的每项改进都可以单独关闭，用于消融实验。"),
-    ("models/losses.py", "损失函数", "交叉熵 + 逐 token 特征去噪损失（v2 替换了原来的语义损失）。"),
+    ("models/losses.py", "损失函数", "交叉熵 + 逐 token 特征去噪损失。"),
     ("models/llm_refiner.py", "BERT 融合修正",
      "只在解码器不确定的位置，用 BERT 在解码器自己的 top-5 候选词里重新打分。"),
     ("train.py", "训练脚本",
@@ -63,7 +63,7 @@ def code(src):
 
 
 def build():
-    cells = [md(f"""# 语义通信收发机 v2 — 完整训练笔记本
+    cells = [md("""# 语义通信收发机 — 完整训练笔记本
 
 这个笔记本包含训练所需的**全部代码**。每个 `%%writefile` 单元格会把一个代码文件写到 Colab 机器的 `/content/sc/` 下，然后由最后的单元格调用。
 

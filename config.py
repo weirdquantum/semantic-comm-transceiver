@@ -46,9 +46,9 @@ class Config:
     val_fraction = 0.05     # carved out of the training split
     val_snr_list = [-5.0, 0.0, 5.0]   # model selection SNRs (dB)
 
-    # ----- composite loss weights -----
+    # ----- loss weights -----
     alpha_ce = 1.0
-    beta_semantic = 0.1     # feature-denoising loss weight (improved model only)
+    beta_feat = 0.1         # feature-denoising loss weight (improved model only)
 
     # ----- evaluation SNR points -----
     eval_snr_list = [-10, -5, 0, 5, 10, 15, 20]
@@ -61,10 +61,6 @@ class Config:
     llm_tune_snrs = [-5.0, 0.0, 5.0]
     llm_tune_samples = 2000
 
-    # ----- channel types -----
-    AWGN = "awgn"
-    RAYLEIGH = "rayleigh"
-
     # ----- device -----
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -72,8 +68,3 @@ class Config:
         device = torch.device("mps")
     else:
         device = torch.device("cpu")
-
-    @classmethod
-    def ensure_dirs(cls):
-        for d in [cls.data_dir, cls.checkpoint_dir, cls.result_dir]:
-            os.makedirs(d, exist_ok=True)
