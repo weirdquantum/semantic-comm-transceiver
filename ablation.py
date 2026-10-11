@@ -100,6 +100,34 @@ def plot_metric_vs_snr(data, metric, channel, out_dir):
     print(f"  Saved {fname}")
 
 
+def plot_gain_vs_baseline(data, metric, channel, out_dir):
+    """Difference to the greedy Baseline, which makes small gaps visible."""
+    if "Baseline" not in data:
+        return
+    base = data["Baseline"]
+    plt.figure(figsize=(8, 5))
+    for label, snr_dict in data.items():
+        if label == "Baseline":
+            continue
+        snrs = [s for s in sorted(snr_dict) if metric in snr_dict[s] and metric in base.get(s, {})]
+        if not snrs:
+            continue
+        diff = [100 * (snr_dict[s][metric] - base[s][metric]) for s in snrs]
+        style = "--" if "beam" in label else "-"
+        plt.plot(snrs, diff, style, marker="o", linewidth=2, label=label)
+    plt.axhline(0, color="black", linewidth=1)
+    plt.xlabel("SNR (dB)", fontsize=13)
+    plt.ylabel(f"Δ {METRIC_LABELS.get(metric, metric)} vs Baseline (points)", fontsize=12)
+    plt.title(f"Gain over greedy Baseline ({channel.upper()})", fontsize=14)
+    plt.legend(fontsize=9)
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    fname = os.path.join(out_dir, f"{channel}_{metric}_gain_vs_baseline.png")
+    plt.savefig(fname, dpi=150)
+    plt.close()
+    print(f"  Saved {fname}")
+
+
 def plot_training_curves(results_dir, out_dir):
     """Plot training loss and validation accuracy from history.json files."""
     fig, axes = plt.subplots(1, 2, figsize=(14, 5))
@@ -167,9 +195,13 @@ def main():
         print(f"Loaded {channel} results for: {list(data.keys())}")
         for metric in METRICS:
             plot_metric_vs_snr(data, metric, channel, args.out_dir)
+        for metric in ["BLEU-4", "WordAcc"]:
+            plot_gain_vs_baseline(data, metric, channel, args.out_dir)
         tables.append(summary_table(data, channel))
 
-    plot_training_curves(args.results_dir, args.out_dir)
+    if any(os.path.isfile(os.path.join(args.results_dir, d, "history.json"))
+           for cfg in CONFIGS.values() for d, _, _ in cfg.values()):
+        plot_training_curves(args.results_dir, args.out_dir)
 
     if tables:
         text = "\n\n".join(tables)

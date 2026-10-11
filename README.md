@@ -70,7 +70,9 @@ reconstruction ◄─ [BERT MLM refiner] ◄─ Semantic Decoder (SNR-adaptive) 
 ├── lightweight.py         # Knowledge distillation + quantisation
 ├── run_all.py             # Train all 8 variants → evaluate → refine → plot (resumable)
 ├── scripts/run_cloud.sh   # One-command run on a cloud GPU
+├── checkpoints/           # v2 evaluation results (eval_*.json, llm_fusion_*.json; weights not tracked)
 ├── checkpoints_v1/        # Results of the first experiment round (eval_*.json, history.json)
+├── results_v2/            # v2 summary tables, plots and RESULTS.md
 └── thesis/
     ├── latex_full_report/ # Final report (LaTeX: chapters/, tables/, figures/, refs.bib)
     │   └── scripts/plot_thesis_figures.py   # Builds result figures from checkpoints/*.json
@@ -184,26 +186,30 @@ from google.colab import drive; drive.mount('/content/drive')
 !bash scripts/run_cloud.sh
 ```
 
-## Results (first experiment round)
+## Results
 
-The numbers below come from the first round of experiments
-(`checkpoints_v1/`), before the v2 changes listed above. BLEU-4 on 2,000
-Europarl test sentences:
+Full write-up with ablations, BERT-fusion analysis and caveats:
+[`results_v2/RESULTS.md`](results_v2/RESULTS.md). BLEU-4 on 10,000 Europarl
+test sentences per SNR point (95 % bootstrap CI ≈ ±0.8 points at ≤ 0 dB):
 
-| Model                    | Channel  | −10 dB | −5 dB | 0 dB  | 5 dB  | 10 dB | 20 dB |
-| ------------------------ | -------- | ------ | ----- | ----- | ----- | ----- | ----- |
-| Baseline DeepSC          | AWGN     | 0.419  | 0.734 | 0.837 | 0.963 | 0.991 | 0.993 |
-| Improved, no sem. loss   | AWGN     | 0.449  | 0.745 | 0.840 | 0.971 | 0.995 | 0.996 |
-| Improved (full)          | AWGN     | 0.433  | 0.739 | 0.837 | 0.969 | 0.993 | 0.994 |
-| Improved + beam search 5 | AWGN     | 0.455  | 0.750 | 0.849 | 0.973 | 0.993 | 0.995 |
-| Improved + BERT refiner  | AWGN     | 0.405  | 0.733 | 0.834 | 0.965 | 0.991 | 0.994 |
-| Baseline DeepSC          | Rayleigh | 0.470  | 0.666 | 0.817 | 0.917 | 0.965 | 0.987 |
-| Improved (full)          | Rayleigh | 0.464  | 0.660 | 0.805 | 0.915 | 0.965 | 0.988 |
+| Model | Channel | −10 dB | −5 dB | 0 dB | 5 dB | 10 dB |
+| --- | --- | --- | --- | --- | --- | --- |
+| Baseline DeepSC | AWGN | 0.429 | 0.736 | 0.838 | 0.963 | 0.991 |
+| Improved | AWGN | 0.443 | 0.749 | 0.848 | 0.975 | 0.996 |
+| Improved + beam 5 | AWGN | **0.461** | **0.758** | **0.859** | **0.978** | **0.996** |
+| Baseline DeepSC | Rayleigh | 0.345 | 0.572 | 0.746 | 0.870 | 0.941 |
+| Improved | Rayleigh | 0.349 | 0.569 | 0.750 | 0.878 | 0.951 |
+| Improved + beam 5 | Rayleigh | **0.353** | **0.579** | **0.759** | **0.885** | **0.954** |
 
-In that round, SNR-adaptive attention and beam search gave the clearest gains
-at low SNR on AWGN, while the semantic loss and the BERT refiner did not
-improve BLEU. The thesis (`thesis/latex_full_report`) discusses these
-results. The v1 Rayleigh channel also had `E[|h|²] = 2`, which v2 fixes.
+- The improved transceiver beats DeepSC on both channels (AWGN: +0.5–1.4
+  BLEU-4 and +2.8–3.5 word-accuracy points up to 5 dB; Rayleigh: +0.4–1.0
+  BLEU-4 at 0–10 dB).
+- Ablations: the CSI-aware receiver helps at every Rayleigh SNR and FiLM
+  helps at −5…10 dB, while length-aware power normalisation and the
+  feature-denoising loss bring no measurable gain. The BERT fusion refiner
+  is roughly neutral.
+- Results of the first round (before the v2 changes) are kept in
+  `checkpoints_v1/`.
 
 ## Evaluation Metrics
 
