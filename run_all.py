@@ -124,8 +124,9 @@ def main():
             bert_dir = os.path.join(ckpt_root, "bert_europarl")
             if not os.path.isfile(os.path.join(bert_dir, "config.json")) or args.smoke:
                 run_cmd([py, "finetune_bert.py", "--save_dir", bert_dir] + bert_extra, env)
+            channel_of = {tag: channel for tag, _, channel, _ in TRAIN_CONFIGS}
             for tag in LLM_CONFIGS:
-                channel = "rayleigh" if "rayleigh" in tag else "awgn"
+                channel = channel_of[tag]
                 if not os.path.isfile(ckpt_of(tag)):
                     continue
                 beam = ["--beam_width", str(BEAM)]
@@ -137,7 +138,7 @@ def main():
                 evaluate(tag, channel, beam + ["--use_llm", "--llm_model", bert_dir],
                          f"beam{BEAM}_llm")
 
-    # ---- Ablation plots ----
+    # ---- Summary table and plots ----
     run_cmd([py, "ablation.py",
              "--results_dir", ckpt_root,
              "--out_dir", result_dir], env)

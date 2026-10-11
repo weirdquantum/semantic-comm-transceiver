@@ -13,7 +13,6 @@ import argparse
 import os
 import pickle
 import re
-import string
 from collections import Counter
 
 from config import Config

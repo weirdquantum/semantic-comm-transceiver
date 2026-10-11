@@ -92,17 +92,24 @@ _SCORERS = {}
 
 
 def compute_bert_score(pred_texts, ref_texts, device="cpu"):
-    """BERTScore (Precision, Recall, F1) using the bert-score library."""
+    """BERTScore (Precision, Recall, F1) using the bert-score library.
+
+    Empty predictions score 0, as bert-score intends; they are scored here
+    because bert-score's own empty-sentence path fails with transformers 5.
+    """
     try:
         if "bertscore" not in _SCORERS:
             from bert_score import BERTScorer
             _SCORERS["bertscore"] = BERTScorer(lang="en", device=str(device), batch_size=128)
-        P, R, F1 = _SCORERS["bertscore"].score(pred_texts, ref_texts, verbose=False)
-        return {
-            "BERTScore_P": float(P.mean()),
-            "BERTScore_R": float(R.mean()),
-            "BERTScore_F1": float(F1.mean()),
-        }
+        keep = [i for i, p in enumerate(pred_texts) if p.strip()]
+        scores = np.zeros((3, len(pred_texts)))
+        if keep:
+            P, R, F1 = _SCORERS["bertscore"].score([pred_texts[i] for i in keep],
+                                                   [ref_texts[i] for i in keep],
+                                                   verbose=False)
+            scores[:, keep] = torch.stack([P, R, F1]).cpu().numpy()
+        P, R, F1 = scores.mean(axis=1)
+        return {"BERTScore_P": float(P), "BERTScore_R": float(R), "BERTScore_F1": float(F1)}
     except Exception as e:
         print(f"  [warn] BERTScore failed: {e}")
         return {}
@@ -363,8 +370,6 @@ def run_evaluation(args):
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--checkpoint", type=str, required=True)
-    p.add_argument("--model", choices=["baseline", "improved"], default=None,
-                   help="Ignored: the architecture is read from the checkpoint")
     p.add_argument("--channel", choices=["awgn", "rayleigh"], default=None,
                    help="Default: the channel the checkpoint was trained on")
     p.add_argument("--use_llm", action="store_true",
