@@ -36,3 +36,6 @@ thesis/latex_full_report/figure_prompts_llm.txt
 *.fls
 *.fdb_latexmk
 *.synctex.gz
+
+# Smoke-test outputs (run_all.py --smoke)
+smoke_checkpoints/

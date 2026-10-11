@@ -6,8 +6,10 @@ class Config:
     # ----- paths -----
     base_dir = os.path.dirname(os.path.abspath(__file__))
     data_dir = os.path.join(base_dir, "data")
-    checkpoint_dir = os.path.join(base_dir, "checkpoints")
-    result_dir = os.path.join(base_dir, "results")
+    # SC_CKPT_DIR / SC_RESULT_DIR let cloud runs write to persistent storage
+    checkpoint_dir = os.environ.get("SC_CKPT_DIR", os.path.join(base_dir, "checkpoints"))
+    result_dir = os.environ.get("SC_RESULT_DIR", os.path.join(base_dir, "results"))
+    bert_dir = os.path.join(checkpoint_dir, "bert_europarl")
 
     # ----- vocabulary & tokens -----
     PAD_TOKEN = "<PAD>"
@@ -41,20 +43,35 @@ class Config:
     snr_train_low = -10.0   # dB
     snr_train_high = 20.0   # dB
     warmup_epochs = 5
+    val_fraction = 0.05     # carved out of the training split
+    val_snr_list = [-5.0, 0.0, 5.0]   # model selection SNRs (dB)
 
     # ----- composite loss weights -----
     alpha_ce = 1.0
-    beta_semantic = 0.2
+    beta_semantic = 0.1     # feature-denoising loss weight (improved model only)
 
     # ----- evaluation SNR points -----
     eval_snr_list = [-10, -5, 0, 5, 10, 15, 20]
+    eval_max_samples = 10000
+
+    # ----- LLM fusion refiner (tuned on the validation split) -----
+    llm_topk = 5
+    llm_lambda_grid = [0.0, 0.25, 0.5, 1.0, 2.0]
+    llm_tau_grid = [0.5, 0.7, 0.9]
+    llm_tune_snrs = [-5.0, 0.0, 5.0]
+    llm_tune_samples = 2000
 
     # ----- channel types -----
     AWGN = "awgn"
     RAYLEIGH = "rayleigh"
 
     # ----- device -----
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
 
     @classmethod
     def ensure_dirs(cls):

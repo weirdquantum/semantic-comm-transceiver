@@ -23,6 +23,7 @@ from transformers import (
 )
 
 from config import Config
+from dataset import train_val_indices
 
 
 class EuroparlTextDataset(Dataset):
@@ -53,7 +54,7 @@ def main():
     parser.add_argument("--mlm_prob", type=float, default=0.15)
     parser.add_argument("--max_sentences", type=int, default=100_000,
                         help="Max training sentences (for speed)")
-    parser.add_argument("--save_dir", default=os.path.join(Config.checkpoint_dir, "bert_europarl"))
+    parser.add_argument("--save_dir", default=Config.bert_dir)
     args = parser.parse_args()
 
     device = Config.device
@@ -62,7 +63,9 @@ def main():
     sent_path = os.path.join(Config.data_dir, "sentences.pkl")
     with open(sent_path, "rb") as f:
         all_sents = pickle.load(f)
-    train_sents = all_sents["train"][:args.max_sentences]
+    # exclude the validation sentences used to tune the LLM fusion weights
+    train_idx, _ = train_val_indices(len(all_sents["train"]))
+    train_sents = [all_sents["train"][i] for i in train_idx[:args.max_sentences]]
     print(f"Fine-tuning on {len(train_sents)} Europarl sentences")
 
     tokenizer = AutoTokenizer.from_pretrained(args.model_name)

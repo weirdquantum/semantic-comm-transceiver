@@ -1,61 +1,57 @@
 """
-LLM-Aided Semantic Decoder  (BERT MLM refinement module)
+LLM-Aided Semantic Decoder  (decoder / BERT-MLM fusion refinement)
 
-At inference time the Transformer decoder produces an initial text
-reconstruction together with per-position softmax confidence scores.
-The LLM refiner then:
+At inference time the transceiver produces a reconstruction together with,
+for every output position, its confidence and its top-k candidate tokens.
+The refiner then:
 
-  1. Identifies low-confidence positions using the decoder's own
-     softmax probabilities (confidence < threshold).
-  2. Masks those positions and feeds the sentence to a frozen
-     BERT Masked-LM to obtain bidirectional predictions.
-  3. Accepts a replacement only when it differs from the original
-     word AND when it is a valid alphabetic token.
+  1. Selects positions whose decoder confidence is below ``tau`` (at most
+     ``max_corrections`` per sentence, least confident first, never <UNK>).
+  2. Masks those positions and runs a frozen BERT masked-LM once.
+  3. Re-scores only the decoder's own top-k candidates at each masked
+     position with   log p_dec(w) + lambda * log p_BERT(w | context)
+     and keeps the best one.
+
+Restricting the choice to the decoder's candidates keeps the output inside
+the transceiver vocabulary and anchored to what was actually received;
+BERT only arbitrates between channel-plausible words.  lambda = 0 leaves
+the sentence unchanged, so tuning (lambda, tau) on the validation split
+can never do worse than no refinement there.
 
 The refiner is applied **only at inference** — it does not participate
-in gradient-based training of the transceiver, keeping training efficient.
-
-Key difference from the previous DistilGPT-2 approach:
-  - Bidirectional context (BERT) instead of left-only (GPT-2)
-  - Triggered by the transceiver's OWN uncertainty, not external LM ppl
-  - Eliminates domain-mismatch: no threshold depends on the LM's
-    familiarity with the target corpus
+in gradient-based training of the transceiver.
 """
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Sequence, Tuple
 
 import torch
-import torch.nn.functional as F
+
+# One sentence to refine: (words, per-word confidence, per-word candidates)
+# where candidates is a list of (word, decoder log-prob) pairs.
+RefineItem = Tuple[List[str], List[float], List[List[Tuple[str, float]]]]
+
+SPECIAL_WORDS = {"<PAD>", "<START>", "<END>", "<UNK>"}
 
 
 class LLMRefiner:
-    """Post-hoc semantic refinement using a frozen BERT Masked-LM.
-
-    Strategy: **decoder-confidence-driven mask-then-predict**.
-
-    For each sentence the transceiver decoded:
-      1. Look at the per-position softmax confidence from the decoder.
-         Positions with confidence < *confidence_threshold* are candidates.
-      2. Replace those words with [MASK] and run the frozen BERT MLM.
-      3. Accept the BERT prediction only if it differs from the original
-         and is a valid alphabetic word.
-      4. At most *max_corrections* replacements per sentence.
-    """
-
     def __init__(
         self,
         model_name: str = "bert-base-uncased",
-        confidence_threshold: float = 0.6,
+        lam: float = 0.5,
+        tau: float = 0.7,
         max_corrections: int = 3,
+        batch_size: int = 64,
         device: torch.device | str = "cpu",
     ):
         from transformers import AutoTokenizer, AutoModelForMaskedLM
 
         self.device = torch.device(device)
-        self.confidence_threshold = confidence_threshold
+        self.lam = lam
+        self.tau = tau
         self.max_corrections = max_corrections
+        self.batch_size = batch_size
 
         self.tokenizer = AutoTokenizer.from_pretrained(model_name)
         self.model = AutoModelForMaskedLM.from_pretrained(model_name).to(self.device)
@@ -65,154 +61,75 @@ class LLMRefiner:
 
         self.mask_token = self.tokenizer.mask_token
         self.mask_id = self.tokenizer.mask_token_id
+        self._piece_cache: Dict[str, int] = {}
 
     # ------------------------------------------------------------------
+    def _first_piece(self, word: str) -> int:
+        """BERT id of the first word-piece of ``word`` (cached)."""
+        if word not in self._piece_cache:
+            pieces = self.tokenizer.tokenize(word)
+            self._piece_cache[word] = (
+                self.tokenizer.convert_tokens_to_ids(pieces[0])
+                if pieces else self.tokenizer.unk_token_id)
+        return self._piece_cache[word]
+
+    def _positions(self, item: RefineItem, tau: float) -> List[int]:
+        words, confs, _ = item
+        low = [i for i in range(min(len(words), len(confs)))
+               if confs[i] < tau and words[i] not in SPECIAL_WORDS]
+        low.sort(key=lambda i: confs[i])
+        return sorted(low[: self.max_corrections])
+
     @torch.no_grad()
-    def refine(
-        self,
-        sentences: List[str],
-        decoder_confidences: Optional[List[List[float]]] = None,
-    ) -> List[str]:
-        """Refine a batch of draft sentences.
-
-        Args:
-            sentences: list of decoded sentences (space-separated words).
-            decoder_confidences: per-sentence list of per-word confidence
-                scores (max softmax probability). ``None`` → skip all
-                refinement (pass-through).
-
-        Returns:
-            List of (possibly refined) sentences.
-        """
-        if decoder_confidences is None:
-            return sentences
-        return [
-            self._refine_single(s, c)
-            for s, c in zip(sentences, decoder_confidences)
-        ]
-
-    # ------------------------------------------------------------------
-    def _refine_single(
-        self, sentence: str, word_confs: List[float]
-    ) -> str:
-        words = sentence.split()
-        if len(words) < 3:
-            return sentence
-
-        n_words = min(len(words), len(word_confs))
-
-        low_conf = [
-            (i, word_confs[i])
-            for i in range(n_words)
-            if word_confs[i] < self.confidence_threshold
-        ]
-        if not low_conf:
-            return sentence
-
-        low_conf.sort(key=lambda x: x[1])
-        candidates = low_conf[: self.max_corrections]
-
-        mask_positions = [idx for idx, _ in candidates]
-        masked_words = words.copy()
-        for pos in mask_positions:
-            masked_words[pos] = self.mask_token
-        masked_sentence = " ".join(masked_words)
-
-        enc = self.tokenizer(
-            masked_sentence,
-            return_tensors="pt",
-            truncation=True,
-            max_length=128,
-        ).to(self.device)
-
-        logits = self.model(**enc).logits  # (1, T_bpe, V)
-        input_ids = enc["input_ids"][0]
-
-        mask_bpe_positions = (input_ids == self.mask_id).nonzero(as_tuple=True)[0]
-
-        word_to_bpe_masks = self._map_word_masks_to_bpe(
-            words, mask_positions, mask_bpe_positions
-        )
-
-        result_words = words.copy()
-        for word_pos, bpe_indices in word_to_bpe_masks.items():
-            predicted_pieces = []
-            for bpe_idx in bpe_indices:
-                top_id = logits[0, bpe_idx].argmax().item()
-                predicted_pieces.append(top_id)
-            replacement = self.tokenizer.decode(predicted_pieces).strip()
-
-            if not replacement:
-                continue
-            replacement_clean = replacement.split()[0] if replacement.split() else ""
-            if not replacement_clean:
-                continue
-            if not replacement_clean.isalpha():
-                continue
-            if replacement_clean.lower() == result_words[word_pos].lower():
-                continue
-            result_words[word_pos] = replacement_clean
-
-        return " ".join(result_words)
+    def _bert_logprobs(self, items: Sequence[RefineItem],
+                       positions: List[List[int]]):
+        """For each item, a {word_pos: log-prob vector over BERT vocab}."""
+        out: List[Dict[int, torch.Tensor]] = [{} for _ in items]
+        todo = [i for i, pos in enumerate(positions)
+                if pos and len(items[i][0]) >= 3]
+        for s in range(0, len(todo), self.batch_size):
+            chunk = todo[s:s + self.batch_size]
+            texts = []
+            for i in chunk:
+                masked = list(items[i][0])
+                for p in positions[i]:
+                    masked[p] = self.mask_token
+                texts.append(" ".join(masked))
+            enc = self.tokenizer(texts, return_tensors="pt", padding=True,
+                                 truncation=True, max_length=128).to(self.device)
+            logp = torch.log_softmax(self.model(**enc).logits.float(), dim=-1)
+            for row, i in enumerate(chunk):
+                mask_idx = (enc["input_ids"][row] == self.mask_id).nonzero(
+                    as_tuple=True)[0].tolist()
+                # each [MASK] is a single word-piece, in word order
+                for p, b in zip(positions[i], mask_idx):
+                    out[i][p] = logp[row, b].cpu()
+        return out
 
     # ------------------------------------------------------------------
-    def _map_word_masks_to_bpe(
-        self,
-        words: List[str],
-        mask_word_positions: List[int],
-        mask_bpe_positions: torch.Tensor,
-    ) -> dict:
-        """Map each masked word index to its corresponding BPE [MASK] indices.
+    def refine_grid(self, items: Sequence[RefineItem], lams: Sequence[float],
+                    tau: float) -> Dict[float, List[str]]:
+        """Refine every item for several lambdas sharing one BERT pass."""
+        positions = [self._positions(it, tau) for it in items]
+        bert = self._bert_logprobs(items, positions)
+        results = {}
+        for lam in lams:
+            texts = []
+            for it, pos_lp in zip(items, bert):
+                words = list(it[0])
+                if lam > 0:
+                    for p, lp_bert in pos_lp.items():
+                        best_w, best_s = words[p], float("-inf")
+                        for w, lp_dec in it[2][p]:
+                            if w in SPECIAL_WORDS:
+                                continue
+                            score = lp_dec + lam * lp_bert[self._first_piece(w)].item()
+                            if score > best_s:
+                                best_w, best_s = w, score
+                        words[p] = best_w
+                texts.append(" ".join(words))
+            results[lam] = texts
+        return results
 
-        Returns dict  {word_pos: [bpe_idx, ...]}
-        """
-        mapping: dict = {}
-        bpe_iter = iter(mask_bpe_positions.tolist())
-
-        masked_words = words.copy()
-        for pos in mask_word_positions:
-            masked_words[pos] = self.mask_token
-        masked_sentence = " ".join(masked_words)
-
-        tokens = self.tokenizer.tokenize(masked_sentence)
-
-        mask_count = 0
-        word_idx = 0
-        mask_word_set = set(mask_word_positions)
-        mask_word_sorted = sorted(mask_word_positions)
-        current_mask_word_ptr = 0
-
-        bpe_positions_list = mask_bpe_positions.tolist()
-        bpe_ptr = 0
-
-        for word_pos in mask_word_sorted:
-            orig_word = words[word_pos]
-            n_bpe_for_word = len(
-                self.tokenizer.tokenize(self.mask_token)
-            )
-            if bpe_ptr < len(bpe_positions_list):
-                mapping[word_pos] = [bpe_positions_list[bpe_ptr]]
-                bpe_ptr += 1
-            else:
-                mapping[word_pos] = []
-
-        return mapping
-
-    # ------------------------------------------------------------------
-    @torch.no_grad()
-    def score_sentences(self, sentences: List[str]) -> List[float]:
-        """Return per-sentence pseudo-log-likelihood under the MLM."""
-        scores = []
-        for sent in sentences:
-            enc = self.tokenizer(
-                sent, return_tensors="pt", truncation=True, max_length=128
-            ).to(self.device)
-            input_ids = enc["input_ids"]
-            if input_ids.size(1) < 2:
-                scores.append(0.0)
-                continue
-            logits = self.model(**enc).logits
-            log_probs = F.log_softmax(logits, dim=-1)
-            token_lp = log_probs[0, range(input_ids.size(1)), input_ids[0]]
-            scores.append(token_lp.mean().item())
-        return scores
+    def refine(self, items: Sequence[RefineItem]) -> List[str]:
+        return self.refine_grid(items, [self.lam], self.tau)[self.lam]
